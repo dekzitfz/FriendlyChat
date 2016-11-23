@@ -14,4 +14,4 @@ android:
     - addon-google_apis-google-24
 
 script:
-   - ./gradlew clean build connectedCheck -PdisablePreDex --stacktrace --info --debug
+   - ./gradlew clean build connectedCheck -PdisablePreDex --stacktrace
