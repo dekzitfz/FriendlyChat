@@ -1,0 +1,23 @@
+language: android
+android:
+  components:
+    - platform-tools
+    - tools
+    - build-tools-24.0.1
+    - android-24
+    - extra-google-google_play_services
+    - extra-google-m2repository #Google Play Services
+    - extra-android-m2repository #Design Support Library
+    - extra-android-support
+
+before_cache:
+  - rm -f  $HOME/.gradle/caches/modules-2/modules-2.lock
+  - rm -fr $HOME/.gradle/caches/*/plugin-resolution/
+
+cache:
+  directories:
+    - $HOME/.gradle/caches/
+    - $HOME/.gradle/wrapper/
+    
+script:
+   - ./gradlew build connectedCheck
