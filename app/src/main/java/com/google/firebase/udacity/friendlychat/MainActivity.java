@@ -15,8 +15,14 @@
  */
 package com.google.firebase.udacity.friendlychat;
 
+import android.*;
+import android.Manifest;
+import android.app.ProgressDialog;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
@@ -36,7 +42,6 @@ import android.widget.ProgressBar;
 import android.widget.Toast;
 
 import com.firebase.ui.auth.AuthUI;
-import com.google.android.gms.auth.api.Auth;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.firebase.auth.FirebaseAuth;
@@ -51,12 +56,20 @@ import com.google.firebase.remoteconfig.FirebaseRemoteConfigSettings;
 import com.google.firebase.storage.FirebaseStorage;
 import com.google.firebase.storage.StorageReference;
 import com.google.firebase.storage.UploadTask;
+import com.vistrav.ask.Ask;
+import com.vistrav.ask.annotations.AskDenied;
+import com.vistrav.ask.annotations.AskGranted;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import id.zelory.compressor.Compressor;
+import pl.aprilapps.easyphotopicker.DefaultCallback;
+import pl.aprilapps.easyphotopicker.EasyImage;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -85,6 +98,9 @@ public class MainActivity extends AppCompatActivity {
     private StorageReference storageReference;
     private FirebaseRemoteConfig firebaseRemoteConfig;
 
+    private ProgressDialog progress;
+    private File file;
+
     private String mUsername;
 
     @Override
@@ -100,6 +116,10 @@ public class MainActivity extends AppCompatActivity {
         firebaseStorage = FirebaseStorage.getInstance();
         firebaseRemoteConfig = FirebaseRemoteConfig.getInstance();
 
+        EasyImage.configuration(this)
+                .setImagesFolderName("img") //images folder name, default is "EasyImage"
+                .saveInAppExternalFilesDir() //if you want to use root internal memory for storying images
+                .saveInRootPicturesDirectory();
 
         databaseReference = firebaseDatabase.getReference().child("messages");
         storageReference = firebaseStorage.getReference().child("chat_photos");
@@ -123,10 +143,19 @@ public class MainActivity extends AppCompatActivity {
         mPhotoPickerButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+
+                //handle permissions
+                Ask.on(MainActivity.this)
+                        .forPermissions(android.Manifest.permission.CAMERA
+                                , android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        .withRationales("Camera permission need for capture your image",
+                                "In order to save image you will need to grant storage permission")
+                        .go();
+
+                /*Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.setType("image/jpeg");
                 intent.putExtra(Intent.EXTRA_LOCAL_ONLY, true);
-                startActivityForResult(Intent.createChooser(intent, "Complete action using"), RC_PHOTO_PICKER);
+                startActivityForResult(Intent.createChooser(intent, "Complete action using"), RC_PHOTO_PICKER);*/
             }
         });
 
@@ -199,6 +228,21 @@ public class MainActivity extends AppCompatActivity {
         fetchConfig();
     }
 
+    @AskGranted(android.Manifest.permission.CAMERA)
+    public void cameraAccessGranted() {
+        Log.i(TAG, "CAMERA GRANTED");
+        EasyImage.openChooserWithGallery(MainActivity.this,null,RC_PHOTO_PICKER);
+    }
+
+    @AskDenied(android.Manifest.permission.CAMERA)
+    public void cameraAccessDenied() {Log.i(TAG, "CAMERA DENIED");}
+
+    @AskGranted(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    public void writeAccessGranted() {Log.i(TAG, "WRITE_EXTERNAL_STORAGE GRANTED");}
+
+    @AskDenied(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    public void writeAccessDenied() {Log.i(TAG, "WRITE_EXTERNAL_STORAGE DENIED");}
+
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data){
         super.onActivityResult(requestCode,resultCode,data);
@@ -209,8 +253,28 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(this, "Sign In Canceled!", Toast.LENGTH_SHORT).show();
                 finish();
             }
-        }else if(requestCode == RC_PHOTO_PICKER && resultCode == RESULT_OK){
-            Uri uri = data.getData();
+        }else{
+            Toast.makeText(this, "picked", Toast.LENGTH_SHORT).show();
+            EasyImage.handleActivityResult(requestCode, resultCode, data, this, new DefaultCallback() {
+                @Override
+                public void onImagePickerError(Exception e, EasyImage.ImageSource source, int type) {
+                    if(e.getMessage()!=null){
+                        Log.e(TAG,e.getMessage());
+                        Toast.makeText(MainActivity.this, e.getMessage(), Toast.LENGTH_SHORT).show();
+                    }else{
+                        Log.e(TAG,"something wrong when pick image");
+                    }
+                }
+
+                @Override
+                public void onImagePicked(File imageFile, EasyImage.ImageSource source, int type) {
+                    file = imageFile;
+                    new CompressImage().execute();
+                }
+            });
+
+
+            /*Uri uri = data.getData();
 
             // Get a reference to store file at chat_photos/<FILENAME>
             StorageReference photoRef = storageReference.child(uri.getLastPathSegment());
@@ -223,7 +287,7 @@ public class MainActivity extends AppCompatActivity {
                     FriendlyMessage friendlyMessage = new FriendlyMessage(null,mUsername,downloadURL.toString());
                     databaseReference.push().setValue(friendlyMessage);
                 }
-            });
+            });*/
         }
     }
 
@@ -328,5 +392,53 @@ public class MainActivity extends AppCompatActivity {
     private void applyRetrievedLengthLimit(){
         long friendly_msg_length = firebaseRemoteConfig.getLong(FRIENDLY_MSG_LENGTH_KEY);
         mMessageEditText.setFilters(new InputFilter[]{new InputFilter.LengthFilter((int) friendly_msg_length)});
+    }
+
+    private class CompressImage extends AsyncTask<Object, Object, File> {
+
+        protected void onPreExecute() {
+            progress = new ProgressDialog(MainActivity.this);
+            progress.setMessage("Compressing Image");
+            progress.setProgressStyle(ProgressDialog.STYLE_SPINNER);
+            progress.setIndeterminate(true);
+            progress.setCancelable(true);
+            progress.show();
+        }
+
+        @Override
+        protected File doInBackground(Object... params) {
+            //compress image
+            File compressedImageFile = Compressor.getDefault(MainActivity.this).compressToFile(file);
+            return compressedImageFile;
+        }
+
+        @Override
+        protected void onPostExecute(File result) {
+            progress.dismiss();
+            galleryAddPic(result);
+        }
+    }
+
+    private void galleryAddPic(File f) {
+        Intent mediaScanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+        Uri contentUri = Uri.fromFile(f);
+        mediaScanIntent.setData(contentUri);
+        this.sendBroadcast(mediaScanIntent);
+        uploadToStorage(contentUri);
+    }
+
+    private void uploadToStorage(Uri uri){
+            // Get a reference to store file at chat_photos/<FILENAME>
+            StorageReference photoRef = storageReference.child(uri.getLastPathSegment());
+
+            //upload to storage
+            photoRef.putFile(uri).addOnSuccessListener(this, new OnSuccessListener<UploadTask.TaskSnapshot>() {
+                @Override
+                public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
+                    Uri downloadURL = taskSnapshot.getDownloadUrl();
+                    FriendlyMessage friendlyMessage = new FriendlyMessage(null,mUsername,downloadURL.toString());
+                    databaseReference.push().setValue(friendlyMessage);
+                }
+            });
     }
 }

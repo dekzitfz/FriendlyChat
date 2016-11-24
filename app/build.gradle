@@ -53,6 +53,8 @@ dependencies {
     compile 'com.firebaseui:firebase-ui-auth:1.0.0'
 
     compile 'com.github.jkwiecien:EasyImage:1.3.1'
+    compile 'com.vistrav:ask:2.4'
+    compile 'id.zelory:compressor:1.0.3'
 }
 
 apply plugin: 'com.google.gms.google-services'
