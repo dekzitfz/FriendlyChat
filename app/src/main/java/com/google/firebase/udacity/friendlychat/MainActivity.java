@@ -34,6 +34,7 @@ import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
@@ -117,8 +118,8 @@ public class MainActivity extends AppCompatActivity {
         firebaseRemoteConfig = FirebaseRemoteConfig.getInstance();
 
         EasyImage.configuration(this)
-                .setImagesFolderName("img") //images folder name, default is "EasyImage"
-                .saveInAppExternalFilesDir() //if you want to use root internal memory for storying images
+                .setImagesFolderName("img")
+                .saveInAppExternalFilesDir()
                 .saveInRootPicturesDirectory();
 
         databaseReference = firebaseDatabase.getReference().child("messages");
@@ -151,11 +152,6 @@ public class MainActivity extends AppCompatActivity {
                         .withRationales("Camera permission need for capture your image",
                                 "In order to save image you will need to grant storage permission")
                         .go();
-
-                /*Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-                intent.setType("image/jpeg");
-                intent.putExtra(Intent.EXTRA_LOCAL_ONLY, true);
-                startActivityForResult(Intent.createChooser(intent, "Complete action using"), RC_PHOTO_PICKER);*/
             }
         });
 
@@ -202,6 +198,7 @@ public class MainActivity extends AppCompatActivity {
                     //loged in
                     Toast.makeText(MainActivity.this, "You are signed in!", Toast.LENGTH_SHORT).show();
                     onSignedInInit(user.getDisplayName());
+
                 }else{
                     //loged off
                     onSignedOutInit();
@@ -272,22 +269,6 @@ public class MainActivity extends AppCompatActivity {
                     new CompressImage().execute();
                 }
             });
-
-
-            /*Uri uri = data.getData();
-
-            // Get a reference to store file at chat_photos/<FILENAME>
-            StorageReference photoRef = storageReference.child(uri.getLastPathSegment());
-
-            //upload to storage
-            photoRef.putFile(uri).addOnSuccessListener(this, new OnSuccessListener<UploadTask.TaskSnapshot>() {
-                @Override
-                public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
-                    Uri downloadURL = taskSnapshot.getDownloadUrl();
-                    FriendlyMessage friendlyMessage = new FriendlyMessage(null,mUsername,downloadURL.toString());
-                    databaseReference.push().setValue(friendlyMessage);
-                }
-            });*/
         }
     }
 
@@ -295,6 +276,8 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume(){
         super.onResume();
         firebaseAuth.addAuthStateListener(authStateListener);
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN);
+
     }
 
     @Override
@@ -344,6 +327,11 @@ public class MainActivity extends AppCompatActivity {
                 public void onChildAdded(DataSnapshot dataSnapshot, String s) {
                     FriendlyMessage newFriendlyMessage = dataSnapshot.getValue(FriendlyMessage.class);
                     mMessageAdapter.add(newFriendlyMessage);
+                    mMessageAdapter.notifyDataSetChanged();
+                    Log.d(TAG+"_chatCount",String.valueOf(mMessageAdapter.getCount()));
+                    if(mMessageAdapter.getCount()>0){
+                        mMessageListView.smoothScrollToPosition(mMessageAdapter.getCount()-1);
+                    }
                 }
 
                 @Override
@@ -356,6 +344,9 @@ public class MainActivity extends AppCompatActivity {
                 public void onCancelled(DatabaseError databaseError) {}
             };
             databaseReference.addChildEventListener(childEventListener);
+            //mMessageListView.smoothScrollToPosition(mMessageAdapter.getCount()-1);
+            //Log.d(TAG+"_chatCount",String.valueOf(mMessageAdapter.getCount()));
+            mMessageAdapter.notifyDataSetChanged();
         }
 
     }
@@ -383,7 +374,9 @@ public class MainActivity extends AppCompatActivity {
         .addOnFailureListener(new OnFailureListener() {
             @Override
             public void onFailure(@NonNull Exception e) {
-                Log.w(TAG,e.getMessage());
+                if(e!=null){
+                    Log.w(TAG,e.getMessage());
+                }
                 applyRetrievedLengthLimit();
             }
         });
@@ -440,5 +433,7 @@ public class MainActivity extends AppCompatActivity {
                     databaseReference.push().setValue(friendlyMessage);
                 }
             });
+
+
     }
 }
